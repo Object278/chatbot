@@ -54,3 +54,10 @@ else:
         with st.chat_message("assistant"):
             response = st.write_stream(stream)
         st.session_state.messages.append({"role": "assistant", "content": response})
+
+st.header("Settings")
+st.write(f"You are logged in as {st.session_state.role}.")
+
+
+
+
