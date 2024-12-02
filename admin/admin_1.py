@@ -11,9 +11,9 @@ st.header("Admin 1")
 st.write(f"You are logged in as {st.session_state.role}.")
 
 
-# 下载必要的nltk资源
-nltk.download('punkt')
-nltk.download('stopwords')
+# # 下载必要的nltk资源
+# nltk.download('punkt')
+# nltk.download('stopwords')
 
 def extract_keywords_from_json(json_input: str, num_keywords: int = 10) -> str:
     """
@@ -28,6 +28,7 @@ def extract_keywords_from_json(json_input: str, num_keywords: int = 10) -> str:
         data = json.loads(json_input)
         #article = data.get("article", "")
         article = data
+        
         
         if not article.strip():
             raise ValueError("文章内容不能为空")
