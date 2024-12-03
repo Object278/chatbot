@@ -23,7 +23,7 @@ def interact_with_chatgpt(topics, email, password, max_responses=5):
     :return: 包含话题、对话历史和时间戳的数据框
     """
     # 设置 WebDriver
-    driver = webdriver.Chrome(service=Service('./chromedriver'))  # 替换为 WebDriver 路径
+    driver = webdriver.Chrome(service=Service('/usr/local/bin/chromedriver-linux64'))  # 替换为 WebDriver 路径
     wait = WebDriverWait(driver, 20)
     
     try:
