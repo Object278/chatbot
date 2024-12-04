@@ -3,6 +3,13 @@ from typing import Union
 from fastapi import FastAPI
 import json
 
+from typing import Annotated
+
+from typing_extensions import TypedDict
+
+from langgraph.graph import StateGraph, START, END
+from langgraph.graph.message import add_messages
+
 app = FastAPI()
 
 
@@ -37,6 +44,8 @@ def user_request(task_description: str, parameter: json, ret: str):
     check if function object 1 and 2 are the same
         if not
             check who's similarity is lower, try to figure out which is wrong, contact user
+
+            
         if yes
             continue execute function 1
                 now we move from croase layer to a more detailed layer
@@ -60,3 +69,61 @@ def user_request(task_description: str, parameter: json, ret: str):
     在比较结构化的场合，具体的工具可以帮助我们代替用LLM和RAG route和reason
     '''
     pass
+
+class State(TypedDict):
+    # Messages have the type "list". The `add_messages` function
+    # in the annotation defines how this state key should be updated
+    # (in this case, it appends messages to the list, rather than overwriting them)
+    messages: Annotated[list, add_messages]
+
+graph_builder = StateGraph(State)
+
+
+def reason():
+    pass
+
+def rag_route(task_emb, para_emb, ret_emb):
+    # RAG
+
+    # LLM
+
+    pass
+
+def llm_route(task_emb. para_emb, ret_emb):
+
+    pass
+
+def execute(function: callable):
+
+    pass
+
+### Tools or we called fundamental actions
+
+class Tool_Agents:
+    def to_link_and_peek(link: str):
+        '''
+        go to a link
+
+        state:
+            add whole content of link into state/memory
+            生成页面的总结，或者DOM树上值得注意的结构，加入state
+        
+        '''
+        pass
+
+    def find_target_element(target_type: str, target_des: str):
+        '''
+        the agent want a target http element with certain description
+        this could also be a agent, which ask the llm to decide 
+        if the element meets the need
+
+        '''
+        pass
+
+    def fill_form(form_location):
+        '''
+        fill a http form and submit, interact with website using Seleioum 
+        '''
+        pass
+
+
