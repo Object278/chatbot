@@ -87,7 +87,7 @@ class State(TypedDict):
     messages: Annotated[list, add_messages]
     oracle_plan: Annotated[list, add_messages]
     # how to store the received website
-    websites_dict: Annotated[List[Tuple[str, str, str]], add_messages]
+    websites_list: Annotated[List[Tuple[str, str, str, list]], add_messages]
 
 
 class Oracle():
