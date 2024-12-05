@@ -40,14 +40,24 @@ class Tool_Agents:
 
         return {"website_dict": [(link, summary, page_source)]}
 
-    def find_target_element(target_type: str, target_des: str):
+    # 在给llm的决策prompt中，应该规定只能选择有意义的http 元素，比如说div是无意义的，form，button是有意义的
+    def find_target_element(target_type: str, target_des: str, state: State):
         '''
         the agent want a target http element with certain description
         this could also be a agent, which ask the llm to decide 
         if the element meets the need
 
         '''
-        pass
+        html_content = state['websites_dict']["?"]
+        soup = BeautifulSoup(html_content, 'html.parser')
+
+        elements = soup.find_all(target_type)
+        for element in elements:
+            pass
+        
+        target_element = None
+        # 将页面summary，每个element（的summary？）和target des对比，可以问llm或者rag？看哪个是对应的
+        return target_element
 
     def fill_form(form_location):
         '''
