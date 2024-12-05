@@ -1,4 +1,4 @@
-from typing import Union
+from typing import Union, Dict, Tuple, List
 
 from fastapi import FastAPI
 import json
@@ -9,6 +9,16 @@ from typing_extensions import TypedDict
 
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
+from langchain import hub
+from langchain.agents.tools import Tool
+from langchain_community.utilities import SerpAPIWrapper
+from langchain.agents import create_react_agent
+from langchain.agents import AgentExecutor
+
+from openai import OpenAI
+
+
+
 
 app = FastAPI()
 
@@ -75,25 +85,57 @@ class State(TypedDict):
     # in the annotation defines how this state key should be updated
     # (in this case, it appends messages to the list, rather than overwriting them)
     messages: Annotated[list, add_messages]
+    oracle_plan: Annotated[list, add_messages]
+    # how to store the received website
+    websites_dict: Annotated[List[Tuple[str, str, str]], add_messages]
+
+
+class Oracle():
+    def __init__(self):
+        self.client = OpenAI(api_key="<DeepSeek API Key>", base_url="https://api.deepseek.com")
+        search = SerpAPIWrapper()
+        self.tools = [
+            Tool(
+                name="search",
+                func=search.run
+                description="Search the new information when you don't have relevant information."
+            )
+        ]
+        self.prompt = hub.pull("hwchase17/react")
+        self.agent = create_react_agent(self.client, self.tools, self.prompt)
+        self.agent_executor = AgentExecutor(agent=self.agent, tools=self.tools, verbose=True)
+
+    def concult_react_oracle(self, input: str):
+        # 这里是基于记忆进行一次推理(预言)，所以不适用对话系统的client.chat.Completion.create 方法
+        return self.agent_executor.invoke({"input": input})
+
 
 graph_builder = StateGraph(State)
 
+oracle = Oracle()
 
-def reason():
-    pass
+
+def reason(state: State):
+    # 需要调整每一步的prompt...
+    # oracle的每次计划和具体的交互信息分开
+    input = "What is the next step if we have following message history?" + str(state['messages'])
+    return {"oracle_plan": [oracle.concult_react_oracle(input)]}
+
+
 
 def rag_route(task_emb, para_emb, ret_emb):
-    # RAG
+    # RAG,最好写好了具体操作之后再构建
 
-    # LLM
-
-    pass
-
-def llm_route(task_emb. para_emb, ret_emb):
 
     pass
 
-def execute(function: callable):
+def llm_route(task_emb, para_emb, ret_emb, state: State):
+    input = "What is the next tool we should use if we have following plan?" + str(state['oracle_plan'])
+    input = input + "we have following tools, answer in JSON: TODO Tool descriptions"
+    function, parameter = oracle.concult_react_oracle(input)
+    execute(function, parameter)
+
+def execute(function: callable, parameter):
 
     pass
 
