@@ -97,3 +97,8 @@ def search():
     input_text()
     click()
 
+
+# 检测网页有没有因为操作由视觉上的更新，判断要不要重新peek网页
+def check_update():
+    pass
+
