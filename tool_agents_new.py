@@ -11,12 +11,14 @@ from main import State
 from lxml import etree
 from selenium.webdriver.common.action_chains import ActionChains
 
-def coordination_transformation(bbox):
+class Website():
     pass
 
-def to_link_and_peek(link: str, state: State):
+def coordination_transformation(bbox):
+    # 设计一套坐标体系，能包含页面坐标，视口坐标
+    pass
 
-    
+def to_link_and_peek(link: str, state: State): 
     chrome_options = Options()
     chrome_options.add_argument("--headless")
     service = Service(executable_path='/path/to/chromedriver')
@@ -27,7 +29,6 @@ def to_link_and_peek(link: str, state: State):
     screenshot_path = "screenshot.png"
     driver.save_screenshot(screenshot_path)
     # driver 需要作为一个长久存在的东西
-
 
     # Extract text
     soup = BeautifulSoup(page_source, 'html.parser')
@@ -48,9 +49,51 @@ def to_link_and_peek(link: str, state: State):
     ui_context = []
     actions = ActionChains(driver)
     for box in bbox:
-        actions.move_by_offset(box.center.x, box.center.y)
+        script = f"return document.elementFromPoint({box.center.x}, {box.center.y});"
+        element_html = driver.execute_script(script)
+        # 返回的html元素可以进行许多操作，甚至可以修订ocr识别出来的外框的范围，但python对象需要通过javascript脚本才能访问到原生的DOM属性
+        # 想出来一种context的格式
+        ui_element.append(element_html)
+        ui_context.append("context TODO")
 
+    # put all these information into the state
+
+    # Form a prompt ask the llm what to do next based on user
 
     driver.quit()
 
+    prompt = "" + str(state)
+
+    return prompt
+
+    # reason function ask the oracle this prompt
+
+
+# 下面是在网页上，agent可以进行的基础操作，这些基础操作模仿人使用网站的操作而定义
+# 均是可以由selenium完成的基础操作，但是稍微把一些过于细节的操作融合在一起
+# Level 1较为基础
+def input_text():
+    # 输入一个文本框，用户名，邮箱或者密码都在这一类，search方法可以由这个和click组合出来
+    pass
+
+def click():
+    # 点击一个元素，可以被语义化扩展为：select_element_in_sidebar, choose等等，本质都是执行一个点击操作
+    pass
+
+def forward():
+    # Selenium操作页面往前
+    pass
+
+def backward():
+    # Selenium操作页面回到上一步
+    pass
+
+def dropdown_list():
+    # 处理下拉列表选择，可以组合为选择生日，选择预定日期等等
+    pass
+
+# Level 2 更加语义化集成
+def search():
+    input_text()
+    click()
 
