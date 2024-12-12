@@ -31,7 +31,7 @@ class Peek():
     def __enter__(self):
         chrome_options = Options()
         chrome_options.add_argument("--headless")
-        service = Service(executable_path='/path/to/chromedriver')
+        service = Service(executable_path='/usr/local/bin/chromedriver-linux64/chromedriver')
         self.driver = webdriver.Chrome(service=service, options=chrome_options)
         self.ocr_reader = easyocr.Reader(['en', 'ch'])
 
