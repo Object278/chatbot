@@ -9,9 +9,8 @@ from selenium.webdriver.support.ui import Select
 from urllib.parse import urlparse
 from bs4 import BeautifulSoup
 import functools
-
-from langchain.prompts import PromptTemplate
-from langchain.prompts import PartialPromptTemplate
+import json
+import requests
 
 '''
 环境变量：
@@ -19,6 +18,8 @@ webdriver安装地址
 本地vllm部署的大模型的端口
 prompt最长token数，如果过长可能会需要使用rag获取以前的prompt里面的关键部分
 模型名称
+            "max_tokens": 50,
+            "temperature": 0
 '''
 
 def action_error_detector(func):
@@ -46,7 +47,8 @@ def action_error_detector(func):
 
 class RoundState():
     def __init__(self):
-        self.action = None
+        self.action = ""
+        self.response = ""
         self.observation = []
 
     def __init__(self, action: str, observation: list[str]):
@@ -59,56 +61,50 @@ class RoundState():
     def append_observation(self, observation: str):
         self.observation.append(observation)
 
-class RoundPrompt():
-    def __init__(self):
-        self.round = ""
-        self.observation = ""
-        self.action = ""
-
-    def __str__(self):
-        return f"{self.round}{self.observation}{self.action}"
+    def set_response(self, response: str):
+        self.response = response
 
 class RoundStateList():
-    def __init__(self):
+    def __init__(self, user_instruction: str):
         # 预先初始化round 0，每次添加action之后，才会初始化下一个round
         # 一个round中，observation列表可以有多个或者没有，但是action必须有一个
         self.state_list = [RoundState()]
-        self.prompt_list = [RoundPrompt()]
         self.latest_prompt_index = 0 # 这是roundstate之中当前最新的，也是唯一一个没有填充完成的prompt所在的index
-        self.completed_prompt = '' # 这是所有已经填充完毕的prompt所组成的字符串
-        self.action_prompt = PromptTemplate(
-            input_variables=["action"],
-            template="assistant:\n{action}\n"    
-        )
-        self.observation_prompt = PromptTemplate(
-            input_variables=["observation"],
-            template="user:\n{observation}\n"
-        )
-        self.round_prompt = PromptTemplate(
-            input_variables=["index"],
-            template="Round {index}\n"
-        )
+        self.completed_prompt = [
+            {"role": "system", "content": "Task instruction: " + user_instruction},
+            {"role": "user", "content": "Round 0 " + user_instruction},
+        ] # 这是所有已经填充完毕的prompt所组成的字符串
         
     # TODO 处理index错误时候怎么办，使用的时候必须遵守流程图定义的顺序
     def add_action(self, index: int, action: str):
         if index != self.latest_prompt_index:
             print("error")
         self.state_list[index].set_action(action)
-        self.prompt_list[index].action = self.action_prompt.format(action=action)
-        self.state_list.append(RoundState())
-        self.prompt_list.append(RoundPrompt())
-        self.completed_prompt = self.completed_prompt + str(self.prompt_list[index])
-        self.latest_prompt_index += 1
+        self.completed_prompt.append(
+             {"role": "assistant", "content": action}
+        )
 
     def add_observation(self, index: int, observation: str):
         if index != self.latest_prompt_index:
             print("error")
         self.state_list[index].append_observation(observation)
-        self.prompt_list[index].observation = self.observation_prompt.format(observation=observation)
-        self.prompt_list[index].round = self.round_prompt.format(index=index)
+
+    def add_response(self, index: int, response: str):
+        if index != self.latest_prompt_index:
+            print("error")
+        self.state_list[index].set_response(response)
+        self.state_list.append(RoundState())
+        self.latest_prompt_index += 1
+        self.completed_prompt.append(
+             {"role": "user", "content": response}
+        )
 
     def get_new_prompt(self):
-        return self.completed_prompt + str(self.prompt_list[self.latest_prompt_index])
+        last_content = self.completed_prompt[-1]["content"]
+        self.completed_prompt[-1]["content"] = last_content + str(self.state_list[self.latest_prompt_index].observation)
+        prompt = json.dumps(self.completed_prompt, indent=4, ensure_ascii=False)
+        self.completed_prompt[-1]["content"] = last_content
+        return prompt
     
     def get_state(self, index: int):
         if index > 0 and index < len(self.state_list):
@@ -118,14 +114,6 @@ class RoundStateList():
     def update_state(self, index: int, round_state: RoundState):
         if index > 0 and index < len(self.state_list):
             self.state_list[index] = round_state
-            self.completed_prompt = str(self)
-
-    def __str__(self):
-        ret = ""
-        # 只输出已经完成的round
-        for i in range(0, self.latest_prompt_index):
-            ret = ret + str(self.prompt_list[i])
-        return ret
 
 # 对应一个selenium webdriver对象，可以独立操作网页并且进行推理。
 # 对于web应用，一个websocket session内部一个Agent和多个用户。用户请求通过前端传递给Agent，Agent的操作大家都能看到
@@ -143,6 +131,10 @@ class Agent():
 
         self.round = 0
         self.user_instruction = None
+        self.url = "http://localhost:8000/v1/chat/completions"
+        self.headers = {
+            "Content-Type": "application/json"
+        }
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         print("Exiting with: " + str(exc_type) + str(exc_val), str(exc_tb))
@@ -154,10 +146,40 @@ class Agent():
     def ask_oracle(self):
         prompt = self.generate_prompt()
         # 提问
+        try:
+            response = requests.post(self.url, headers=self.headers, data=prompt)
+            
+            # 检查响应状态
+            if response.status_code == 200:
+                print("Response:")
+                print(response.json())  # 输出响应的 JSON 数据
+            else:
+                print(f"Request failed with status code {response.status_code}: {response.text}")
+        except requests.exceptions.RequestException as e:
+            print(f"An error occurred: {e}")
 
         # 解析回答
         action = ""
         self.add_action(action)
+
+    '''
+    {
+    "id": "chatcmpl-12345",
+    "object": "chat.completion",
+    "created": 1677652280,
+    "model": "glm-4-9b",
+    "choices": [
+        {
+            "index": 0,
+            "message": {
+                "role": "assistant",
+                "content": "你好！请问有什么我可以帮助您的吗？"
+            },
+            "finish_reason": "stop"
+        }
+    ]
+}
+    '''
 
     '''
     观察
@@ -233,7 +255,14 @@ class Agent():
 
     def generate_prompt(self):
         # 根据上下文限制处理prompt长度，以及其他的参数
-        return f"Task Instruction: {self.user_instruction}\n{self.state.get_new_prompt()}"
+        messages = self.state.get_new_prompt()
+        data = {
+            "model": "glm-4-9b",
+            "messages": messages,
+            "max_tokens": 50,
+            "temperature": 0
+        }
+        return json.dumps(data, indent=4, ensure_ascii=False)
     '''
     观察部分辅助函数
     '''
