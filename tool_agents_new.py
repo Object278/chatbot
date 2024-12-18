@@ -7,7 +7,7 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 from transformers import pipeline
 from bs4 import BeautifulSoup
-from main import State
+from backup.main import State
 from lxml import etree
 from selenium.webdriver.common.action_chains import ActionChains
 import time
