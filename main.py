@@ -97,8 +97,8 @@ class Oracle():
         self.tools = [
             Tool(
                 name="search",
-                func=search.run
-                description="Search the new information when you don't have relevant information."
+                func=search.run,
+                description="Search the new information when you don't have relevant information.",
             )
         ]
         self.prompt = hub.pull("hwchase17/react")
