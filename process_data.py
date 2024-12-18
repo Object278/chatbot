@@ -6,11 +6,15 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import Select
+from selenium.webdriver.common.actions.wheel_input import ScrollOrigin
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.support.ui import WebDriverWait
 from urllib.parse import urlparse
 from bs4 import BeautifulSoup
 import functools
 import json
 import requests
+import time
 
 '''
 环境变量：
@@ -51,9 +55,9 @@ class RoundState():
         self.response = ""
         self.observation = []
 
-    def __init__(self, action: str, observation: list[str]):
-        self.action = action
-        self.observation = observation
+    # def __init__(self, action: str, observation: list[str]):
+    #     self.action = action
+    #     self.observation = observation
 
     def set_action(self, action: str):
         self.action = action
@@ -90,11 +94,11 @@ class RoundStateList():
         self.state_list[index].append_observation(observation)
 
     def add_response(self, index: int, response: str):
+        self.state_list.append(RoundState())
+        self.latest_prompt_index += 1
         if index != self.latest_prompt_index:
             print("error")
         self.state_list[index].set_response(response)
-        self.state_list.append(RoundState())
-        self.latest_prompt_index += 1
         self.completed_prompt.append(
              {"role": "user", "content": response}
         )
@@ -118,7 +122,11 @@ class RoundStateList():
 # 对应一个selenium webdriver对象，可以独立操作网页并且进行推理。
 # 对于web应用，一个websocket session内部一个Agent和多个用户。用户请求通过前端传递给Agent，Agent的操作大家都能看到
 class Agent():
-    def __start__(self):
+
+    def __init__(self, instruction: str):
+        self.state = RoundStateList(instruction + """In the following web page, select the corresponding behavior according to the Task instruction, and give what the "action-id" of the html element corresponding to the action is. Example response format: do(action="Click", actionid="25") or do(action="Search", actionid="26", message="Search content")""")
+
+    def __enter__(self):
         chrome_options = Options()
         chrome_options.add_argument("--headless")
         chrome_options.add_argument('--disable-gpu')
@@ -127,7 +135,7 @@ class Agent():
         service = Service(executable_path='/usr/local/bin/chromedriver-linux64/chromedriver')
         self.driver = webdriver.Chrome(service=service, options=chrome_options)
         self.action_chains = ActionChains(self.driver)
-        self.state = RoundStateList()
+        self.id_center_map = {}
 
         self.round = 0
         self.user_instruction = None
@@ -135,6 +143,7 @@ class Agent():
         self.headers = {
             "Content-Type": "application/json"
         }
+        return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         print("Exiting with: " + str(exc_type) + str(exc_val), str(exc_tb))
@@ -158,9 +167,10 @@ class Agent():
         except requests.exceptions.RequestException as e:
             print(f"An error occurred: {e}")
 
-        # 解析回答
+        # TODO 解析回答
         action = ""
         self.add_action(action)
+        return action
 
     '''
     {
@@ -195,44 +205,55 @@ class Agent():
             html_raw = self.fetch_html_with_selenium(url)
         else:
             print("未检测到URL，访问本地主机的FastAPI服务。")
-            html_raw = fetch_html_with_selenium("http://localhost:8000")
+            html_raw = self.fetch_html_with_selenium("http://localhost:8000")
         html_clean = self.clean_html_and_add_ids(html_raw)
         self.add_observation(html_clean)
 
     '''
     行动
     '''
-    def do(self, action, **kwargs):
+    def do(self, action: str, **kwargs):
+            action_id = kwargs["element"]
+            element = self.id_center_map.get(action_id)
+            self.driver.execute_script("arguments[0].scrollIntoView();", element)
+            
             self.round += 1 
             # TODO汇报任务成功与否
-            if action == "Click":
-                self.click_element(kwargs["element"])
-            elif action == "Hover":
-                self.hover_element(kwargs["element"])
-            elif action == "Type":
-                self.type_message(kwargs["element"], kwargs["message"])
-            elif action == "Search":
-                self.search_message(kwargs["element"], kwargs["message"])
-            elif action == "Press":
-                self.press_keys(*kwargs["keys"])
-            elif action == "Scroll":
-                self.scroll_page(kwargs["direction"])
-            elif action == "Select dropdown option":
-                self.select_dropdown_option(kwargs["element"], kwargs["value"])
-            elif action == "New tab":
-                self.open_new_tab()
-            elif action == "Tab focus":
-                self.focus_tab(kwargs["index"])
-            elif action == "Close tab":
-                self.close_tab()
-            elif action == "Goto":
-                self.go_to_url(kwargs["url"])
-            elif action == "Go back":
-                self.go_back()
-            elif action == "Go forward":
-                self.go_forward()
-            elif action == "Exit":
-                self.exit_browser()
+            try:
+                if action == "Click":
+                    self.click_element(element)
+                elif action == "Hover":
+                    self.hover_element(element)
+                elif action == "Type":
+                    self.type_message(element, kwargs["message"])
+                elif action == "Search":
+                    self.search_message(element, kwargs["message"])
+                elif action == "Press":
+                    self.press_keys(*kwargs["keys"])
+                elif action == "Scroll":
+                    self.scroll_page(kwargs["direction"])
+                elif action == "Select dropdown option":
+                    self.select_dropdown_option(element, kwargs["value"])
+                elif action == "New tab":
+                    self.open_new_tab()
+                elif action == "Tab focus":
+                    self.focus_tab(kwargs["index"])
+                elif action == "Close tab":
+                    self.close_tab()
+                elif action == "Goto":
+                    self.go_to_url(kwargs["url"])
+                elif action == "Go back":
+                    self.go_back()
+                elif action == "Go forward":
+                    self.go_forward()
+                elif action == "Exit":
+                    self.exit_browser()
+                else:
+                    self.add_response(f"Last action {action} failed, because the {action} function is not defined.")
+            except Exception as e:
+                self.add_response(f"Last action {action} failed, because of an error {e}. Please think again what to do.")
+
+            self.add_response(f"Last action {action} succeed!")
 
 
     # 一次用户请求执行完了，准备下一次
@@ -252,6 +273,10 @@ class Agent():
 
     def add_action(self, action: str):
         self.state.add_action(self.round, action)
+
+    # 必须在do函数里的round+1之后调用add response
+    def add_response(self, response):
+        self.state.add_response(self.round, response)
 
     def generate_prompt(self):
         # 根据上下文限制处理prompt长度，以及其他的参数
@@ -282,17 +307,22 @@ class Agent():
         """
         # 创建WebDriver实例
         driver = self.driver
-        try:
-            # 访问指定的URL
-            driver.get(url)
-            # 等待页面加载完成（可根据需要添加显式等待）
-            driver.implicitly_wait(5)  # 隐式等待5秒 TODO 优化
-            # 获取页面的HTML内容
-            html_content = driver.page_source
-            return html_content
-        except Exception as e:
-            print(f"无法访问URL {url}: {e}")
-            return None
+        # try:
+        # 访问指定的URL
+        driver.get(url)
+        # 等待页面加载完成（可根据需要添加显式等待）
+        WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.TAG_NAME, "body"))
+        )
+        # 获取页面的HTML内容
+        html_content = driver.page_source
+        time.sleep(2)# 必须睡眠2秒，不能直接进入create id center map的element.tag_name，好像是太快了就会stale element exception
+
+        self.create_id_center_map()
+        return html_content
+        # except Exception as e:
+        #     print(f"无法访问URL {url}: {e}")
+        #     return None
 
     def clean_html_and_add_ids(self, html_content):
         """
@@ -314,6 +344,9 @@ class Agent():
         id_counter = 0  # 初始化 id 计数器
 
         for tag in soup.find_all(True):  # True 匹配所有标签，也许还可以创建一个索引，保存哪个action_id对应哪个组件，方便后期action文件操作
+            for attribute in ['class', 'style', 'id', 'onclick', 'onmouseover']:
+                if tag is not None and isinstance(tag.attrs, dict) and attribute in tag.attrs:
+                    del tag.attrs[attribute]
             if tag.name in interactive_tags:
                 # 为可交互的标签添加唯一的 id TODO 再添加每个可交互元素的data-bbox
                 if not tag.has_attr('action_id'):
@@ -326,29 +359,65 @@ class Agent():
         # 返回清洗并添加 id 后的 HTML 内容
         return str(soup)
 
+    def create_id_center_map(self):
+        elements = self.driver.find_elements(By.XPATH, "//*")
+        id_center_map = {}
+        interactive_tags = ['a', 'button', 'input', 'select', 'textarea', 'label', 'form']
+        action_id = 0
+
+        for element in elements:
+            if element.tag_name.lower() in interactive_tags:
+                try:
+                    id_center_map[action_id] = element
+                except Exception as e:
+                    print(f"Error processing element {element}: {e}")
+
+        self.id_center_map = id_center_map
+
     '''
     行动部分辅助函数
     '''
+
+    def scroll_to_action_id(self, element_id):
+        try:
+            center = self.id_center_map.get(element_id)
+            if not center:
+                print(f"No center for action id {element_id}")
+                return False
+            scroll_x = self.driver.execute_script("return window.scrollX")
+            scroll_y = self.driver.execute_script("return window.scrollY")
+            viewport_width = self.driver.execute_script("return window.innerWidth")
+            viewport_height = self.driver.execute_script("return window.innerHeight")
+            if not (scroll_x <= center[0] <= scroll_x + viewport_width and
+                scroll_y <= center[1] <= scroll_y + viewport_height):
+                # 目标不在视口内，滚动到目标位置
+                scroll_origin = ScrollOrigin.from_viewport(0, 0)  # 从视口左上角开始滚动
+                scroll_offset_x = center[0] - scroll_x  # 目标相对于当前视口的水平偏移
+                scroll_offset_y = center[1] - scroll_y  # 目标相对于当前视口的垂直偏移
+                ActionChains(self.driver).scroll_from_origin(scroll_origin, scroll_offset_x, scroll_offset_y).perform()
+            return True
+        except Exception as e:
+            print(f"Error clicking element with action-id {element_id}: {e}")
+            return False
+
     @action_error_detector
-    def click_element(self, element_id):
-        element = self.driver.find_element(By.ID, element_id)
+    def click_element(self, element):
         element.click()
 
     @action_error_detector
-    def hover_element(self, element_id):
-        element = self.driver.find_element(By.ID, element_id)
-        self.action_chains.move_to_element(element).perform()
+    def hover_element(self, element):
+        self.actionChains(self.driver).move_to_element(element).perform()
 
     @action_error_detector
-    def type_message(self, element_id, message: str):
+    def type_message(self, element, message: str):
         # error: 找到的元素不是input_box，返回一个错误信息给
-        input_box = self.driver.find_element(By.ID, element_id)
+        input_box = element
         input_box.clear()
         input_box.send_keys(message)
 
     @action_error_detector
-    def search_message(self, element_id, message):
-        input_box = self.driver.find_element(By.ID, element_id)
+    def search_message(self, element, message):
+        input_box = element
         input_box.clear()
         input_box.send_keys(message)
         input_box.send_keys(Keys.RETURN)
@@ -371,9 +440,9 @@ class Agent():
             self.driver.execute_script("window.scrollBy(0, window.innerHeight);")
 
     @action_error_detector
-    def select_dropdown_option(self, element_id, option_value):
+    def select_dropdown_option(self, element, option_value):
         # error：option value不存在
-        dropdown = Select(self.driver.find_element(By.ID, element_id))
+        dropdown = Select(element)
         dropdown.select_by_value(option_value)
 
     @action_error_detector
