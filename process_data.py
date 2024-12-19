@@ -194,18 +194,13 @@ class Agent():
     '''
     观察
     '''
-    def get_html_from_query(self, query):
+    def get_html_from_query(self, url):
         """
         根据用户输入的查询字符串获取相应的HTML内容。
         """
-        url = self.extract_url(query)
-        html_raw = None
-        if url:
-            print(f"检测到URL: {url}")
-            html_raw = self.fetch_html_with_selenium(url)
-        else:
-            print("未检测到URL，访问本地主机的FastAPI服务。")
-            html_raw = self.fetch_html_with_selenium("http://localhost:8000")
+        # url = self.extract_url(query)
+        html_raw = self.fetch_html_with_selenium(url)
+
         html_clean = self.clean_html_and_add_ids(html_raw)
         self.add_observation(html_clean)
 

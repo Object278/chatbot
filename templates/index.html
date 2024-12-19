@@ -88,11 +88,44 @@
         }
 
         // 发送聊天消息
-        function sendMessage() {
+        async function sendMessage() {
             const input = document.getElementById("chat-input");
+            const context = document.getElementById("contextbox")
             const message = input.value;
-            input.value = "";
-            socket.send(JSON.stringify({ user: "User1", action: "sendMessage", message: message }));
+            if (!message.trim()) {
+                alert('Please enter a message.');
+                return;
+            }
+
+            const userMessage = document.createElement('p');
+            userMessage.textContent = `You: ${message}`;
+            context.appendChild(userMessage);
+
+            // Send the message to the backend
+            try {
+                const response = await fetch('/agent', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ message }),
+                });
+
+                const data = await response.json();
+                
+                // Append the agent's response to the chat box
+                const agentMessage = document.createElement('p');
+                agentMessage.textContent = `Agent: ${data.reply}`;
+                context.appendChild(agentMessage);
+            } catch (error) {
+                console.error('Error:', error);
+                alert("Failed to send the message.");
+            }
+
+            // Clear the input field
+            messageBox.value = '';
+
+            // socket.send(JSON.stringify({ user: "User1", action: "sendMessage", message: message }));
         }
 
         function fillForm() {

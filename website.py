@@ -12,11 +12,15 @@ from pydantic import BaseModel
 import uuid
 import logging
 from functools import wraps
+import time
 
 from process_data import Agent
 
 app = FastAPI()
 Base.metadata.create_all(bind=engine)
+
+MAX_STEP = 5 # 这代表Agent目前最多能行动的步数，由于仍为测试版，所以步数较少
+
 
 # 配置 Jinja2 模板目录
 templates = Jinja2Templates(directory="templates")
@@ -43,6 +47,19 @@ class FormRequest(BaseModel):
 class SearchRequest(BaseModel):
     query: str
 
+class ChatMessage(BaseModel):
+    message: str
+
+def extract_url(self, query):
+    """
+    从查询字符串中提取URL。
+    """
+    url_pattern = re.compile(
+        r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+'
+    )
+    urls = url_pattern.findall(query)
+    return urls[0] if urls else None
+
     
 def handle_db_errors(func):
     @wraps(func)
@@ -67,7 +84,32 @@ async def get_page(request: Request):
     """
     return templates.TemplateResponse("index.html", {"request": request})
 
-@app.
+@app.post("/agent")
+async def agent_response(chat_message: ChatMessage):
+    # Example response from the agent
+    user_message = chat_message.message
+    url = extract_url(user_message)
+    if url is not None:
+        user_message = user_message.replace(url, "")
+    else:
+        url = "http://localhost:8000"
+
+    step_action = []
+    with Agent(user_message) as agent:
+        for i in range(MAX_STEP):
+            # 观察
+            agent.get_html_from_query(url)
+            # 思考，作出决定
+            action = agent.ask_oracle()
+            step_action[i] = action
+            # 行动
+            agent.do("Click", element=0)
+            # 等待行动结果
+            time.sleep(2)
+    agent_reply = f"我采取了以下行动来完成任务："
+    for i in range(MAX_STEP):
+        agent_reply = agent_reply + f"{i}.{step_action[i]}"
+    return {"reply": agent_reply}
 
 
 @app.websocket("/ws")
