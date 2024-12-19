@@ -13,13 +13,14 @@ import uuid
 import logging
 from functools import wraps
 import time
+import regex as re
 
 from process_data import Agent
 
 app = FastAPI()
 Base.metadata.create_all(bind=engine)
 
-MAX_STEP = 5 # 这代表Agent目前最多能行动的步数，由于仍为测试版，所以步数较少
+MAX_STEP = 3 # 这代表Agent目前最多能行动的步数，由于仍为测试版，所以步数较少
 
 
 # 配置 Jinja2 模板目录
@@ -50,7 +51,7 @@ class SearchRequest(BaseModel):
 class ChatMessage(BaseModel):
     message: str
 
-def extract_url(self, query):
+def extract_url(query):
     """
     从查询字符串中提取URL。
     """
@@ -86,6 +87,7 @@ async def get_page(request: Request):
 
 @app.post("/agent")
 async def agent_response(chat_message: ChatMessage):
+    print("here")
     # Example response from the agent
     user_message = chat_message.message
     url = extract_url(user_message)
@@ -99,11 +101,9 @@ async def agent_response(chat_message: ChatMessage):
         for i in range(MAX_STEP):
             # 观察
             agent.get_html_from_query(url)
-            # 思考，作出决定
+            # 思考，作出决定并且行动
             action = agent.ask_oracle()
             step_action[i] = action
-            # 行动
-            agent.do("Click", element=0)
             # 等待行动结果
             time.sleep(2)
     agent_reply = f"我采取了以下行动来完成任务："

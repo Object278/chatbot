@@ -15,6 +15,7 @@ import functools
 import json
 import requests
 import time
+import copy
 
 '''
 环境变量：
@@ -25,6 +26,8 @@ prompt最长token数，如果过长可能会需要使用rag获取以前的prompt
             "max_tokens": 50,
             "temperature": 0
 '''
+REMOTE_ORACLE = "https://f64281ee2c78e3b6-8000.cn-northwest-2.gpu-instance.ppinfra.com/"
+COMPLETION_ENDPOINT = "v1/chat/completions"
 
 def action_error_detector(func):
     """
@@ -106,7 +109,7 @@ class RoundStateList():
     def get_new_prompt(self):
         last_content = self.completed_prompt[-1]["content"]
         self.completed_prompt[-1]["content"] = last_content + str(self.state_list[self.latest_prompt_index].observation)
-        prompt = json.dumps(self.completed_prompt, indent=4, ensure_ascii=False)
+        prompt = copy.deepcopy(self.completed_prompt)
         self.completed_prompt[-1]["content"] = last_content
         return prompt
     
@@ -124,7 +127,11 @@ class RoundStateList():
 class Agent():
 
     def __init__(self, instruction: str):
-        self.state = RoundStateList(instruction + """In the following web page, select the corresponding behavior according to the Task instruction, and give what the "action-id" of the html element corresponding to the action is. Example response format: do(action="Click", actionid="25") or do(action="Search", actionid="26", message="Search content")""")
+        self.state = RoundStateList(instruction)# \
+                                    #+ """In the following web page, select the corresponding behavior according to the Task instruction, \
+                                    # and give what the "action-id" of the html element corresponding to the action is. Example response  \
+                                    # format: do(action="action-name", actionid="X") or do(action="action-name", actionid="Y", \
+                                    # message="Search content")""")
 
     def __enter__(self):
         chrome_options = Options()
@@ -139,10 +146,13 @@ class Agent():
 
         self.round = 0
         self.user_instruction = None
-        self.url = "http://localhost:8000/v1/chat/completions"
+        self.url = REMOTE_ORACLE + COMPLETION_ENDPOINT
         self.headers = {
             "Content-Type": "application/json"
         }
+        # 匹配do(action="action-name", actionid="X")，或者do(action="action-name", actionid="Y", message="Search content")
+        self.action_pattern = r'do\(\s*action\s*=\s*"([^"]+)"\s*,\s*element\s*=\s*"([^"]+)"(?:\s*,\s*message\s*=\s*"([^"]+)")?\s*\)'
+
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
@@ -153,23 +163,37 @@ class Agent():
     思考
     '''    
     def ask_oracle(self):
-        prompt = self.generate_prompt()
+        prompt = self.state.get_new_prompt()
         # 提问
+        data = {
+            "model": "webrl-glm-4-9b",
+            "messages": prompt,
+            "max_tokens": 100,
+            "temperature": 0
+        }
         try:
-            response = requests.post(self.url, headers=self.headers, data=prompt)
+            response = requests.post(self.url, headers=self.headers, data=json.dumps(data))
             
             # 检查响应状态
-            if response.status_code == 200:
-                print("Response:")
-                print(response.json())  # 输出响应的 JSON 数据
-            else:
-                print(f"Request failed with status code {response.status_code}: {response.text}")
+            response.raise_for_status()  # Raise an HTTPError for bad responses
+            response_json = response.json()
         except requests.exceptions.RequestException as e:
-            print(f"An error occurred: {e}")
+            print(f"Request failed with status code {response.status_code}: {response.text}")
 
-        # TODO 解析回答
-        action = ""
+        # 解析回答，为什么这样写得看模型的回复是什么格式，然后根据prompt结构调整
+        action = response_json["choices"][0]["message"]["content"]
+        print(action)
         self.add_action(action)
+        match = re.search(self.action_pattern, action)
+        if match:
+            function_name = match.group(1)
+            element = match.group(2)
+            message = match.group(3) if match.group(3) is not None else None
+            self.do(function_name, element = element, message = message)
+        else: 
+            # 如果不知道做什么，还是要round+1，并且设置回复
+            self.round += 1
+            self.add_response("Last action can't match any function, no action is executed, please read the task instruction and choose a correct action again.")
         return action
 
     '''
@@ -208,13 +232,12 @@ class Agent():
     行动
     '''
     def do(self, action: str, **kwargs):
-            action_id = kwargs["element"]
-            element = self.id_center_map.get(action_id)
-            self.driver.execute_script("arguments[0].scrollIntoView();", element)
-            
             self.round += 1 
-            # TODO汇报任务成功与否
             try:
+                action_id = int(kwargs["element"])
+                element = self.id_center_map.get(action_id)
+                self.driver.execute_script("arguments[0].scrollIntoView();", element)
+
                 if action == "Click":
                     self.click_element(element)
                 elif action == "Hover":
@@ -223,26 +246,26 @@ class Agent():
                     self.type_message(element, kwargs["message"])
                 elif action == "Search":
                     self.search_message(element, kwargs["message"])
-                elif action == "Press":
-                    self.press_keys(*kwargs["keys"])
-                elif action == "Scroll":
-                    self.scroll_page(kwargs["direction"])
-                elif action == "Select dropdown option":
-                    self.select_dropdown_option(element, kwargs["value"])
-                elif action == "New tab":
-                    self.open_new_tab()
-                elif action == "Tab focus":
-                    self.focus_tab(kwargs["index"])
-                elif action == "Close tab":
-                    self.close_tab()
-                elif action == "Goto":
-                    self.go_to_url(kwargs["url"])
-                elif action == "Go back":
-                    self.go_back()
-                elif action == "Go forward":
-                    self.go_forward()
-                elif action == "Exit":
-                    self.exit_browser()
+                # elif action == "Press":
+                #     self.press_keys(*kwargs["keys"])
+                # elif action == "Scroll":
+                #     self.scroll_page(kwargs["direction"])
+                # elif action == "Select dropdown option":
+                #     self.select_dropdown_option(element, kwargs["value"])
+                # elif action == "New tab":
+                #     self.open_new_tab()
+                # elif action == "Tab focus":
+                #     self.focus_tab(kwargs["index"])
+                # elif action == "Close tab":
+                #     self.close_tab()
+                # elif action == "Goto":
+                #     self.go_to_url(kwargs["url"])
+                # elif action == "Go back":
+                #     self.go_back()
+                # elif action == "Go forward":
+                #     self.go_forward()
+                # elif action == "Exit":
+                #     self.exit_browser()
                 else:
                     self.add_response(f"Last action {action} failed, because the {action} function is not defined.")
             except Exception as e:
@@ -251,7 +274,7 @@ class Agent():
             self.add_response(f"Last action {action} succeed!")
 
 
-    # 一次用户请求执行完了，准备下一次
+    # TODO 目前一次用户请求创建一个agent，长会话能力需要拓展
     def reset():
         pass
 
@@ -273,16 +296,6 @@ class Agent():
     def add_response(self, response):
         self.state.add_response(self.round, response)
 
-    def generate_prompt(self):
-        # 根据上下文限制处理prompt长度，以及其他的参数
-        messages = self.state.get_new_prompt()
-        data = {
-            "model": "glm-4-9b",
-            "messages": messages,
-            "max_tokens": 50,
-            "temperature": 0
-        }
-        return json.dumps(data, indent=4, ensure_ascii=False)
     '''
     观察部分辅助函数
     '''
@@ -364,6 +377,7 @@ class Agent():
             if element.tag_name.lower() in interactive_tags:
                 try:
                     id_center_map[action_id] = element
+                    action_id += 1 # 额，这一行竟然到项目末尾才发现没写...
                 except Exception as e:
                     print(f"Error processing element {element}: {e}")
 

@@ -2,6 +2,8 @@ from process_data import Agent
 import time
 import json
 
+MAX_STEP = 5
+
 def test_observation():
     print("test1")
     with Agent("访问当前网站，获取网页信息。") as agent:
@@ -10,7 +12,7 @@ def test_observation():
 
 
 def test_action():
-    print("test1")
+    print("test2")
     with Agent("访问当前网站，获取网页信息。") as agent:
         agent.get_html_from_query("https://www.baidu.com/")
         action = """do(action="Click", actionid="0")"""
@@ -25,7 +27,19 @@ def test_action():
         agent.get_html_from_query(current_url)
         print(json.loads(agent.generate_prompt()))
 
+def test_oracle():
+    print("test3")
+    with Agent("Randomly do something.") as agent:
+        for i in range(MAX_STEP):
+            # 观察
+            agent.get_html_from_query("https://www.baidu.com/")
+            print(str(i) + "-----------------------------------------------------------------------------------------------------------------")
+            # 思考，作出决定
+            action = agent.ask_oracle()
+            # 行动
+            time.sleep(2)
+
 
 
 if __name__ == "__main__":
-    test_action()
+    test_oracle()

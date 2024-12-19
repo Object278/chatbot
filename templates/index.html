@@ -103,6 +103,12 @@
 
             // Send the message to the backend
             try {
+                const controller = new AbortController();
+                const signal = controller.signal;
+                const timeout = setTimeout(() => {
+                    controller.abort();
+                }, 1 * 60 * 1000); // 1 分钟
+
                 const response = await fetch('/agent', {
                     method: 'POST',
                     headers: {
@@ -110,7 +116,7 @@
                     },
                     body: JSON.stringify({ message }),
                 });
-
+                clearTimeout(timeout);
                 const data = await response.json();
                 
                 // Append the agent's response to the chat box
@@ -118,11 +124,19 @@
                 agentMessage.textContent = `Agent: ${data.reply}`;
                 context.appendChild(agentMessage);
             } catch (error) {
-                console.error('Error:', error);
-                alert("Failed to send the message.");
+                if (error.name === 'AbortError') {
+                    const agentMessage = document.createElement('p');
+                    agentMessage.textContent = `Agent: 抱歉，我在推理过程中超时，任务不得不终止。`;
+                    context.appendChild(agentMessage);
+                } else {
+                    const agentMessage = document.createElement('p');
+                    agentMessage.textContent = `Agent: 信息可能在发送和中转过程中出错了。`;
+                    context.appendChild(agentMessage);
+                    console.error('Error:', error);
+                    alert('发送消息失败。');
+                }
             }
 
-            // Clear the input field
             messageBox.value = '';
 
             // socket.send(JSON.stringify({ user: "User1", action: "sendMessage", message: message }));
